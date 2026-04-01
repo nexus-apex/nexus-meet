@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Participants | NexusMeet{% endblock %}
+{% block page_title %}Participants{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem">
+  <form class="search-bar" method="get" style="flex:1;margin-bottom:0">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search participants...">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">All Role</option>
+      <option value="host" {% if status_filter == 'host' %}selected{% endif %}>Host</option>
+      <option value="co_host" {% if status_filter == 'co_host' %}selected{% endif %}>Co Host</option>
+      <option value="presenter" {% if status_filter == 'presenter' %}selected{% endif %}>Presenter</option>
+      <option value="attendee" {% if status_filter == 'attendee' %}selected{% endif %}>Attendee</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">Search</button>
+  </form>
+  <a href="/participants/create/" class="btn btn-primary">+ New Participant</a>
+</div>
+
+<div class="card">
+  {% if records %}
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Email</th><th>Meeting Title</th><th>Role</th><th>Joined</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td><a href="/participants/{{ r.pk }}/edit/"><strong>{{ r.name }}</strong></a></td>
+        <td style="color:var(--muted)">{{ r.email|default:"-" }}</td>
+        <td>{{ r.meeting_title|default:"-" }}</td>
+        <td><span class="badge badge-blue">{{ r.get_role_display }}</span></td>
+        <td><span class="badge {{ r.joined|yesno:\"badge-green,badge-red\" }}">{{ r.joined|yesno:\"Yes,No\" }}</span></td>
+        <td class="actions">
+          <a href="/participants/{{ r.pk }}/edit/" class="btn btn-primary btn-sm">Edit</a>
+          <form method="post" action="/participants/{{ r.pk }}/delete/" style="display:inline" onsubmit="return confirm('Delete?')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">Del</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <p>No participants found.</p>
+    <a href="/participants/create/" class="btn btn-primary" style="margin-top:1rem">Create Participant</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
