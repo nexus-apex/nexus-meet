@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Meetings | NexusMeet{% endblock %}
+{% block page_title %}Meetings{% endblock %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap;gap:1rem">
+  <form class="search-bar" method="get" style="flex:1;margin-bottom:0">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search meetings...">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">All Status</option>
+      <option value="scheduled" {% if status_filter == 'scheduled' %}selected{% endif %}>Scheduled</option>
+      <option value="live" {% if status_filter == 'live' %}selected{% endif %}>Live</option>
+      <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+      <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">Search</button>
+  </form>
+  <a href="/meetings/create/" class="btn btn-primary">+ New Meeting</a>
+</div>
+
+<div class="card">
+  {% if records %}
+  <table>
+    <thead>
+      <tr><th>Title</th><th>Host</th><th>Scheduled Date</th><th>Duration Mins</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td><a href="/meetings/{{ r.pk }}/edit/"><strong>{{ r.title }}</strong></a></td>
+        <td>{{ r.host|default:"-" }}</td>
+        <td style="color:var(--muted)">{{ r.scheduled_date|date:"M d, Y"|default:"-" }}</td>
+        <td>{{ r.duration_mins|default:"-" }}</td>
+        <td><span class="badge badge-blue">{{ r.get_status_display }}</span></td>
+        <td class="actions">
+          <a href="/meetings/{{ r.pk }}/edit/" class="btn btn-primary btn-sm">Edit</a>
+          <form method="post" action="/meetings/{{ r.pk }}/delete/" style="display:inline" onsubmit="return confirm('Delete?')">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">Del</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <p>No meetings found.</p>
+    <a href="/meetings/create/" class="btn btn-primary" style="margin-top:1rem">Create Meeting</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
