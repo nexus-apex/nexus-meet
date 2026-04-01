@@ -3,9 +3,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
-from django.views.decorators.http import require_http_methods
-from django.conf import settings
-from .models import Record
+from django.db.models import Sum, Count
+from .models import Meeting, Participant, Recording
 
 
 def login_view(request):
@@ -30,67 +29,178 @@ def logout_view(request):
 
 @login_required
 def dashboard_view(request):
-    total = Record.objects.count()
-    active = Record.objects.filter(status='active').count()
-    pending = Record.objects.filter(status='pending').count()
-    inactive = Record.objects.filter(status='inactive').count()
-    recent = Record.objects.all()[:10]
-    return render(request, 'dashboard.html', {
-        'total': total, 'active': active, 'pending': pending,
-        'inactive': inactive, 'recent': recent,
-    })
+    ctx = {}
+    ctx['meeting_count'] = Meeting.objects.count()
+    ctx['meeting_scheduled'] = Meeting.objects.filter(status='scheduled').count()
+    ctx['meeting_live'] = Meeting.objects.filter(status='live').count()
+    ctx['meeting_completed'] = Meeting.objects.filter(status='completed').count()
+    ctx['participant_count'] = Participant.objects.count()
+    ctx['participant_host'] = Participant.objects.filter(role='host').count()
+    ctx['participant_co_host'] = Participant.objects.filter(role='co_host').count()
+    ctx['participant_presenter'] = Participant.objects.filter(role='presenter').count()
+    ctx['recording_count'] = Recording.objects.count()
+    ctx['recording_processing'] = Recording.objects.filter(status='processing').count()
+    ctx['recording_ready'] = Recording.objects.filter(status='ready').count()
+    ctx['recording_expired'] = Recording.objects.filter(status='expired').count()
+    ctx['recording_total_size_mb'] = Recording.objects.aggregate(t=Sum('size_mb'))['t'] or 0
+    ctx['recent'] = Meeting.objects.all()[:10]
+    return render(request, 'dashboard.html', ctx)
 
 
 @login_required
-def records_view(request):
-    records = Record.objects.all()
-    status_filter = request.GET.get('status', '')
+def meeting_list(request):
+    qs = Meeting.objects.all()
     search = request.GET.get('search', '')
-    if status_filter:
-        records = records.filter(status=status_filter)
     if search:
-        records = records.filter(name__icontains=search)
-    return render(request, 'records.html', {'records': records, 'status_filter': status_filter, 'search': search})
+        qs = qs.filter(title__icontains=search)
+    status_filter = request.GET.get('status', '')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'meeting_list.html', {'records': qs, 'search': search, 'status_filter': status_filter})
 
 
 @login_required
-def record_create(request):
+def meeting_create(request):
     if request.method == 'POST':
-        Record.objects.create(
-            name=request.POST.get('name', ''),
-            description=request.POST.get('description', ''),
-            status=request.POST.get('status', 'active'),
-            email=request.POST.get('email', ''),
-            phone=request.POST.get('phone', ''),
-            amount=request.POST.get('amount', 0) or 0,
-            notes=request.POST.get('notes', ''),
-        )
-        return redirect('/records/')
-    return render(request, 'record_form.html', {'editing': False})
+        obj = Meeting()
+        obj.title = request.POST.get('title', '')
+        obj.host = request.POST.get('host', '')
+        obj.scheduled_date = request.POST.get('scheduled_date') or None
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.status = request.POST.get('status', '')
+        obj.participants = request.POST.get('participants') or 0
+        obj.meeting_url = request.POST.get('meeting_url', '')
+        obj.notes = request.POST.get('notes', '')
+        obj.save()
+        return redirect('/meetings/')
+    return render(request, 'meeting_form.html', {'editing': False})
 
 
 @login_required
-def record_edit(request, pk):
-    record = get_object_or_404(Record, pk=pk)
+def meeting_edit(request, pk):
+    obj = get_object_or_404(Meeting, pk=pk)
     if request.method == 'POST':
-        record.name = request.POST.get('name', record.name)
-        record.description = request.POST.get('description', record.description)
-        record.status = request.POST.get('status', record.status)
-        record.email = request.POST.get('email', record.email)
-        record.phone = request.POST.get('phone', record.phone)
-        record.amount = request.POST.get('amount', record.amount) or 0
-        record.notes = request.POST.get('notes', record.notes)
-        record.save()
-        return redirect('/records/')
-    return render(request, 'record_form.html', {'record': record, 'editing': True})
+        obj.title = request.POST.get('title', '')
+        obj.host = request.POST.get('host', '')
+        obj.scheduled_date = request.POST.get('scheduled_date') or None
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.status = request.POST.get('status', '')
+        obj.participants = request.POST.get('participants') or 0
+        obj.meeting_url = request.POST.get('meeting_url', '')
+        obj.notes = request.POST.get('notes', '')
+        obj.save()
+        return redirect('/meetings/')
+    return render(request, 'meeting_form.html', {'record': obj, 'editing': True})
 
 
 @login_required
-def record_delete(request, pk):
-    record = get_object_or_404(Record, pk=pk)
+def meeting_delete(request, pk):
+    obj = get_object_or_404(Meeting, pk=pk)
     if request.method == 'POST':
-        record.delete()
-    return redirect('/records/')
+        obj.delete()
+    return redirect('/meetings/')
+
+
+@login_required
+def participant_list(request):
+    qs = Participant.objects.all()
+    search = request.GET.get('search', '')
+    if search:
+        qs = qs.filter(name__icontains=search)
+    status_filter = request.GET.get('status', '')
+    if status_filter:
+        qs = qs.filter(role=status_filter)
+    return render(request, 'participant_list.html', {'records': qs, 'search': search, 'status_filter': status_filter})
+
+
+@login_required
+def participant_create(request):
+    if request.method == 'POST':
+        obj = Participant()
+        obj.name = request.POST.get('name', '')
+        obj.email = request.POST.get('email', '')
+        obj.meeting_title = request.POST.get('meeting_title', '')
+        obj.role = request.POST.get('role', '')
+        obj.joined = request.POST.get('joined') == 'on'
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.save()
+        return redirect('/participants/')
+    return render(request, 'participant_form.html', {'editing': False})
+
+
+@login_required
+def participant_edit(request, pk):
+    obj = get_object_or_404(Participant, pk=pk)
+    if request.method == 'POST':
+        obj.name = request.POST.get('name', '')
+        obj.email = request.POST.get('email', '')
+        obj.meeting_title = request.POST.get('meeting_title', '')
+        obj.role = request.POST.get('role', '')
+        obj.joined = request.POST.get('joined') == 'on'
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.save()
+        return redirect('/participants/')
+    return render(request, 'participant_form.html', {'record': obj, 'editing': True})
+
+
+@login_required
+def participant_delete(request, pk):
+    obj = get_object_or_404(Participant, pk=pk)
+    if request.method == 'POST':
+        obj.delete()
+    return redirect('/participants/')
+
+
+@login_required
+def recording_list(request):
+    qs = Recording.objects.all()
+    search = request.GET.get('search', '')
+    if search:
+        qs = qs.filter(title__icontains=search)
+    status_filter = request.GET.get('status', '')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return render(request, 'recording_list.html', {'records': qs, 'search': search, 'status_filter': status_filter})
+
+
+@login_required
+def recording_create(request):
+    if request.method == 'POST':
+        obj = Recording()
+        obj.title = request.POST.get('title', '')
+        obj.meeting_title = request.POST.get('meeting_title', '')
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.size_mb = request.POST.get('size_mb') or 0
+        obj.date = request.POST.get('date') or None
+        obj.status = request.POST.get('status', '')
+        obj.download_url = request.POST.get('download_url', '')
+        obj.save()
+        return redirect('/recordings/')
+    return render(request, 'recording_form.html', {'editing': False})
+
+
+@login_required
+def recording_edit(request, pk):
+    obj = get_object_or_404(Recording, pk=pk)
+    if request.method == 'POST':
+        obj.title = request.POST.get('title', '')
+        obj.meeting_title = request.POST.get('meeting_title', '')
+        obj.duration_mins = request.POST.get('duration_mins') or 0
+        obj.size_mb = request.POST.get('size_mb') or 0
+        obj.date = request.POST.get('date') or None
+        obj.status = request.POST.get('status', '')
+        obj.download_url = request.POST.get('download_url', '')
+        obj.save()
+        return redirect('/recordings/')
+    return render(request, 'recording_form.html', {'record': obj, 'editing': True})
+
+
+@login_required
+def recording_delete(request, pk):
+    obj = get_object_or_404(Recording, pk=pk)
+    if request.method == 'POST':
+        obj.delete()
+    return redirect('/recordings/')
 
 
 @login_required
@@ -98,12 +208,10 @@ def settings_view(request):
     return render(request, 'settings.html')
 
 
-# API endpoints
 @login_required
 def api_stats(request):
-    return JsonResponse({
-        'total': Record.objects.count(),
-        'active': Record.objects.filter(status='active').count(),
-        'pending': Record.objects.filter(status='pending').count(),
-        'inactive': Record.objects.filter(status='inactive').count(),
-    })
+    data = {}
+    data['meeting_count'] = Meeting.objects.count()
+    data['participant_count'] = Participant.objects.count()
+    data['recording_count'] = Recording.objects.count()
+    return JsonResponse(data)
